@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "上海敲麻助手",
+    "slug": "shanghai-qiaoma-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.local.shanghaiqiaoma"
+    },
+    "android": {
+      "package": "com.local.shanghaiqiaoma"
+    }
+  }
+}
