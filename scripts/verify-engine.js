@@ -83,6 +83,7 @@ const tenpai = solveState({
   flowerCount: 0,
 });
 assert(tenpai.readiness.key === "tenpai", "13 张 0 向显示为听牌");
+assert(tenpai.baseAnalysis.winning.length === 0, "13 张听牌不标记为已胡");
 
 const completeOrReady = solveState({
   handText: "11122233344455m",
@@ -91,8 +92,34 @@ const completeOrReady = solveState({
   flowerCount: 0,
 });
 assert(completeOrReady.readiness.key === "ready-or-complete", "14 张成型牌显示为可胡或可保持听牌");
+assert(completeOrReady.baseAnalysis.winning.length > 0, "14 张成型牌标记为已胡/成型");
 assert(completeOrReady.tileEfficiency.enabled, "外部 JS 牌效库可作为基础向听参考");
 assert(
   completeOrReady.recommendations.some((item) => item.tileEfficiency),
   "出牌候选包含外部牌效参考信息"
 );
+
+const plainWin = solveState({
+  handText: "123m 456m 789p 123s EE",
+  meldText: "",
+  deadText: "",
+  flowerCount: 0,
+});
+assert(plainWin.baseAnalysis.patterns.includes("平胡"), "敲麻基础目标包含普通平胡");
+assert(plainWin.baseAnalysis.shanten === 0, "普通 4 面子 1 对可判定为 0 向");
+
+const windPungFlowers = solveState({
+  handText: "EEE 123m 456p 789s NN",
+  meldText: "",
+  deadText: "",
+  flowerCount: 0,
+});
+assert(windPungFlowers.flowerCount === 1, "手中风刻计 1 花");
+
+const openWindPungFlowers = solveState({
+  handText: "123m 456p 789s NN",
+  meldText: "EEE",
+  deadText: "",
+  flowerCount: 0,
+});
+assert(openWindPungFlowers.flowerCount === 1, "明风刻计 1 花");

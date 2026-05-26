@@ -13,8 +13,10 @@ const TILE_ORDER = [
 
 const HONOR_INDEX = new Set([27, 28, 29, 30, 31, 32, 33]);
 const FLOWER_HONOR_TILES = new Set(["C", "F", "B"]);
+const WIND_TILES = new Set(["E", "S", "W", "N"]);
 
 const PATTERNS = [
+  { key: "standard", name: "平胡", type: "global", allowSequence: true },
   { key: "allPungs", name: "碰碰胡", type: "global", allowSequence: false },
   { key: "halfFlush", name: "混一色", type: "halfFlush", allowSequence: true },
   { key: "fullFlush", name: "清一色", type: "fullFlush", allowSequence: true },
@@ -23,6 +25,7 @@ const PATTERNS = [
 ];
 
 const PATTERN_VALUES = {
+  平胡: 1,
   碰碰胡: 5,
   混一色: 6,
   清一色: 8,
@@ -65,6 +68,8 @@ function solveState({ handText, meldText, deadText, flowerCount }) {
     stripFlowerHonors(handCounts) +
     stripFlowerHonors(deadCounts) +
     stripFlowerHonors(meldCounts);
+  const windFlowerCount = countWindFlowerScore(handCounts, meldGroups);
+  const totalFlowerCount = Number(flowerCount || 0) + extractedFlowerCount + windFlowerCount;
   const concealedCount = sumCounts(handCounts);
   const openMeldCount = meldGroups.length;
 
@@ -100,7 +105,12 @@ function solveState({ handText, meldText, deadText, flowerCount }) {
   return {
     concealedCount,
     openMeldCount,
-    flowerCount: Number(flowerCount || 0) + extractedFlowerCount,
+    flowerCount: totalFlowerCount,
+    flowerBreakdown: {
+      inputFlowers: Number(flowerCount || 0),
+      dragonFlowers: extractedFlowerCount,
+      windSetFlowers: windFlowerCount,
+    },
     baseAnalysis,
     readiness: describeReadiness(baseAnalysis, mode),
     safetyContext,
@@ -127,11 +137,11 @@ function analyzeHand(handCounts, meldGroupsOrCount = 0) {
       best = {
         shanten: stats.shanten,
         patterns: [pattern.name],
-        winning: stats.shanten === 0 ? [pattern.name] : [],
+        winning: stats.complete ? [pattern.name] : [],
       };
     } else if (stats.shanten === best.shanten) {
       best.patterns.push(pattern.name);
-      if (stats.shanten === 0) {
+      if (stats.complete) {
         best.winning.push(pattern.name);
       }
     }
@@ -180,7 +190,7 @@ function rankDiscards(
       const drawnState = analyze(drawnHand);
       const drawWeight = availability[draw];
 
-      if (drawnState.shanten === 0) {
+      if (drawnState.winning.length > 0) {
         waits.push(`${TILE_ORDER[draw]}(${availability[draw]})`);
         waitCount += drawWeight;
         immediateWinWeight += drawWeight * scoreState(drawnState);
@@ -269,7 +279,7 @@ function listImprovingDraws(handCounts, meldGroupsOrCount, availability) {
     const nextHand = cloneCounts(handCounts);
     nextHand[tileIndex] += 1;
     const nextState = analyzeHand(nextHand, meldGroupsOrCount);
-    if (nextState.shanten < current.shanten || nextState.shanten === 0) {
+    if (nextState.shanten < current.shanten || nextState.winning.length > 0) {
       options.push({
         tile: TILE_ORDER[tileIndex],
         remaining: availability[tileIndex],
@@ -306,7 +316,11 @@ function evaluatePattern(handCounts, meldContext, pattern) {
     pattern.allowSequence
   );
 
-  return { shanten: Math.max(0, missingTiles - 1) };
+  return {
+    shanten: Math.max(0, missingTiles - 1),
+    complete: missingTiles === 0,
+    missingTiles,
+  };
 }
 
 function createCachedAnalyzer(meldGroupsOrCount) {
@@ -509,13 +523,16 @@ function describeReadiness(baseAnalysis, mode) {
   if (mode === "wait13") {
     return {
       key: "tenpai",
-      summary: "当前是听牌状态，等有效进张胡牌。",
+      summary: "当前是听牌状态；敲麻规则下需要先敲，敲后等有效进张胡牌。",
     };
   }
 
   return {
     key: "ready-or-complete",
-    summary: "当前摸牌后已到可胡或可保持听牌的牌面。",
+    summary:
+      baseAnalysis.winning.length > 0
+        ? "当前摸牌后已成型；敲麻规则下胡牌前需已报听。"
+        : "当前摸牌后可保持听牌，按推荐打一张继续等进张；敲麻胡牌前需已报听。",
   };
 }
 
@@ -707,6 +724,29 @@ function stripFlowerHonors(counts) {
   return flowerCount;
 }
 
+function countWindFlowerScore(handCounts, meldGroups) {
+  let flowers = 0;
+  for (const tile of WIND_TILES) {
+    const index = tileToIndex(tile);
+    if ((handCounts[index] || 0) >= 3) {
+      flowers += 1;
+    }
+  }
+
+  for (const meld of meldGroups) {
+    const tiles = expandCounts(meld);
+    if (tiles.length < 3 || tiles.length > 4 || new Set(tiles).size !== 1) {
+      continue;
+    }
+    const tile = TILE_ORDER[tiles[0]];
+    if (!WIND_TILES.has(tile)) {
+      continue;
+    }
+    flowers += tiles.length === 4 ? 2 : 1;
+  }
+  return flowers;
+}
+
 function isFlowerHonorIndex(index) {
   return FLOWER_HONOR_TILES.has(TILE_ORDER[index]);
 }
@@ -792,5 +832,6 @@ module.exports = {
   cloneCounts,
   sumCounts,
   FLOWER_HONOR_TILES,
+  WIND_TILES,
   isFlowerHonorIndex,
 };
