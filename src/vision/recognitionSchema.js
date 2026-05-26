@@ -72,7 +72,7 @@ function normalizeMelds(melds) {
       return normalizeTileList(meld);
     }
     if (typeof meld === "string") {
-      return normalizeTileList(expandCounts(parseTiles(meld)).map((index) => TILE_ORDER[index]));
+      return textToTiles(meld);
     }
     return [];
   });
@@ -122,6 +122,10 @@ function tilesToText(tiles) {
   return text;
 }
 
+function textToTiles(text) {
+  return expandCounts(parseTiles(text || "")).map((index) => TILE_ORDER[index]);
+}
+
 function describeRecognition(recognition) {
   const normalized = normalizeRecognition(recognition);
   const tileLabel = normalized.drawnTile ? `，摸牌 ${formatTileLabel(normalized.drawnTile)}` : "";
@@ -149,5 +153,6 @@ module.exports = {
   isHighConfidence,
   hasRecognitionConflict,
   describeRecognition,
+  textToTiles,
   tilesToText,
 };

@@ -8,6 +8,7 @@ const {
 const { recognitionFromDetections } = require("../src/vision/localModelRecognizer");
 const { recognitionSchema, extractOutputText } = require("../server/visionProxy");
 const { mapCamerashClass } = require("../src/vision/camerashDataset");
+const { buildTrainingManifest } = require("../src/vision/sampleStore");
 
 function assert(condition, message) {
   if (!condition) {
@@ -117,6 +118,44 @@ async function main() {
   assert(mapCamerashClass({ label: 19 }).tile === "1m", "Camerash 万子标签映射到项目牌码");
   assert(mapCamerashClass({ labelName: "honors-red" }).tile === "C", "Camerash 红中标签映射到项目牌码");
   assert(mapCamerashClass({ label: 35 }).flower, "Camerash 花牌标签可被识别为训练样本花牌");
+
+  const manifest = buildTrainingManifest([
+    {
+      id: "accepted-1",
+      createdAt: "2026-05-26T00:00:00.000Z",
+      imageUri: "file:///accepted.jpg",
+      recognition: HIGH_CONFIDENCE,
+      adoptedRecognition: HIGH_CONFIDENCE,
+      accepted: true,
+      corrected: false,
+      retakeRequested: false,
+    },
+    {
+      id: "corrected-1",
+      createdAt: "2026-05-26T00:00:01.000Z",
+      imageUri: "file:///corrected.jpg",
+      recognition: { ...HIGH_CONFIDENCE, drawnTile: "4m" },
+      adoptedRecognition: HIGH_CONFIDENCE,
+      accepted: true,
+      corrected: true,
+      retakeRequested: false,
+    },
+    {
+      id: "retake-1",
+      createdAt: "2026-05-26T00:00:02.000Z",
+      imageUri: "file:///retake.jpg",
+      recognition: { handTiles: [], overallConfidence: 0.1 },
+      accepted: false,
+      corrected: false,
+      retakeRequested: true,
+    },
+  ]);
+  assert(manifest.sampleCount === 3, "训练 manifest 包含确认、修正和重拍样本");
+  assert(manifest.correctedCount === 1, "训练 manifest 统计修正样本");
+  assert(
+    manifest.samples.find((sample) => sample.id === "corrected-1").labels.drawnTile === "3m",
+    "训练 manifest 使用最终采用牌面作为标签"
+  );
 
   console.log("\n=== Vision Pipeline tests finished ===\n");
 }
