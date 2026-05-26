@@ -26,6 +26,16 @@ async function runLocalRecommendation(photo, context = {}, options = {}) {
 }
 
 async function runCloudVerification(photo, context = {}, localRecognition, options = {}) {
+  if (context.localOnly || options.localOnly) {
+    return {
+      status: "skipped",
+      stage: "cloud",
+      recognition: localRecognition ? normalizeRecognition(localRecognition) : null,
+      message: "全本地模式已启用，不调用云端识别。",
+      warnings: [],
+    };
+  }
+
   if (!options.cloudRecognizer) {
     return null;
   }

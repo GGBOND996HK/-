@@ -1,4 +1,5 @@
 const { normalizeRecognition } = require("./recognitionSchema");
+const { recognizeWithLocalModel } = require("./localModelRecognizer");
 
 async function recognizeLocally(photo, context = {}) {
   if (photo && photo.mockRecognition) {
@@ -15,16 +16,11 @@ async function recognizeLocally(photo, context = {}) {
     });
   }
 
-  return normalizeRecognition({
-    handTiles: [],
-    drawnTile: null,
-    melds: [],
-    deadTiles: [],
-    overallConfidence: 0.12,
-    perTileConfidence: [],
-    source: "local-fast-path",
-    warnings: ["本地麻将牌检测模型尚未训练，无法给出高置信识别。"],
-  });
+  if (context && context.localModelRuntime) {
+    return recognizeWithLocalModel(photo, context);
+  }
+
+  return normalizeRecognition(await recognizeWithLocalModel(photo, context));
 }
 
 module.exports = { recognizeLocally };

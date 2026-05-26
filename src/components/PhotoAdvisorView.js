@@ -7,11 +7,7 @@ import { ResultView } from "./ResultView";
 import { ActionButton } from "./shared";
 
 const { createMockGlassesInput, createPhoneCameraGlassesInput } = require("../vision/glassesInput");
-const { recognizeWithCloud } = require("../vision/cloudRecognizer");
-const {
-  runCloudVerification,
-  runLocalRecommendation,
-} = require("../vision/recommendationPipeline");
+const { runLocalRecommendation } = require("../vision/recommendationPipeline");
 const { describeRecognition } = require("../vision/recognitionSchema");
 const { saveVisionSample } = require("../vision/sampleStore");
 
@@ -32,11 +28,9 @@ export default function PhotoAdvisorView() {
   const [status, setStatus] = useState("idle");
   const [photoUri, setPhotoUri] = useState("");
   const [localOutcome, setLocalOutcome] = useState(null);
-  const [cloudOutcome, setCloudOutcome] = useState(null);
   const [error, setError] = useState("");
 
-  const visibleOutcome =
-    cloudOutcome && cloudOutcome.status !== "cloud-unavailable" ? cloudOutcome : localOutcome;
+  const visibleOutcome = localOutcome;
   const result = visibleOutcome && visibleOutcome.status === "recommendation" ? visibleOutcome.result : null;
   const recognition = visibleOutcome ? visibleOutcome.recognition : null;
 
@@ -46,7 +40,6 @@ export default function PhotoAdvisorView() {
 
   const runPipeline = async (input) => {
     setError("");
-    setCloudOutcome(null);
     setLocalOutcome(null);
     setStatus("capturing");
 
@@ -56,7 +49,7 @@ export default function PhotoAdvisorView() {
       setPhotoUri(prepared.uri || "");
 
       setStatus("local");
-      const local = await runLocalRecommendation(prepared, {});
+      const local = await runLocalRecommendation(prepared, { localOnly: true });
       setLocalOutcome(local);
       await saveVisionSample({
         imageUri: prepared.uri,
@@ -66,43 +59,16 @@ export default function PhotoAdvisorView() {
       });
 
       setStatus(local.status === "recommendation" ? "done" : "retake");
-      runCloudCheck(prepared, local.recognition);
     } catch (captureError) {
       setStatus("idle");
       setError(captureError.message);
     }
   };
 
-  const runCloudCheck = async (prepared, localRecognition) => {
-    setStatus((current) => (current === "done" ? "done-cloud" : "cloud"));
-    try {
-      const cloud = await runCloudVerification(prepared, {}, localRecognition, {
-        cloudRecognizer: recognizeWithCloud,
-      });
-      if (cloud) {
-        setCloudOutcome(cloud);
-        setStatus(cloud.status === "recommendation" ? "done" : cloud.status);
-        await saveVisionSample({
-          imageUri: prepared.uri,
-          recognition: cloud.recognition,
-          accepted: cloud.status === "recommendation",
-          retakeRequested: cloud.status !== "recommendation",
-        });
-      }
-    } catch (cloudError) {
-      setStatus((current) => (current === "cloud" ? "retake" : current));
-      setCloudOutcome({
-        status: "cloud-unavailable",
-        message: "云端校验未连接，本次只使用本地结果。",
-        warnings: [cloudError.message],
-      });
-    }
-  };
-
   if (!permission) {
     return (
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>拍照推荐</Text>
+        <Text style={styles.cardTitle}>全本地拍照推荐</Text>
         <Text style={styles.body}>正在检查相机权限。</Text>
       </View>
     );
@@ -112,7 +78,7 @@ export default function PhotoAdvisorView() {
     return (
       <View style={styles.container}>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>拍照推荐</Text>
+          <Text style={styles.cardTitle}>全本地拍照推荐</Text>
           <Text style={styles.body}>需要相机权限才能拍摄手牌。</Text>
           <View style={styles.buttonRow}>
             <ActionButton title="授权相机" onPress={requestPermission} primary />
@@ -129,7 +95,7 @@ export default function PhotoAdvisorView() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>拍照推荐</Text>
+        <Text style={styles.cardTitle}>全本地拍照推荐</Text>
         <View style={styles.cameraShell}>
           <CameraView ref={cameraRef} style={styles.camera} facing="back" />
         </View>
@@ -199,20 +165,18 @@ function StatusPanel({ status, outcome, recognition }) {
 }
 
 function statusTitle(status) {
-  if (status === "done" || status === "done-cloud") return "已生成推荐";
+  if (status === "done") return "已生成推荐";
   if (status === "retake") return "需要重拍";
-  if (status === "conflict") return "识别冲突";
-  if (status === "cloud") return "等待云端校验";
-  if (status === "local") return "本地快识别";
+  if (status === "local") return "本地模型识别";
   if (status === "capturing") return "正在拍摄";
   return "待拍照";
 }
 
 function statusLabel(status) {
   if (status === "capturing") return "正在获取照片。";
-  if (status === "local") return "正在用本地快路径识别。";
-  if (status === "cloud") return "本地置信度不足，正在等待云端校验。";
-  return "把自己的手牌放进画面后拍照。";
+  if (status === "local") return "正在用手机本地模型识别牌面，不上传照片。";
+  if (status === "retake") return "本地模型置信度不足，请靠近牌面重拍。";
+  return "把自己的手牌放进画面后拍照，照片只在本机处理。";
 }
 
 const styles = StyleSheet.create({

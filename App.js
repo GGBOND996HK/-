@@ -80,7 +80,7 @@ export default function App() {
           activeOpacity={0.8}
         >
           <Text style={[styles.tabText, mode === "photo" ? styles.tabTextActive : null]}>
-            拍照推荐
+            本地拍照
           </Text>
         </TouchableOpacity>
         <TouchableOpacity

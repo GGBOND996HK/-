@@ -14,8 +14,8 @@
 
 - `App.js`：手机应用主界面
 - `src/engine/mahjong.js`：麻将分析引擎
-- `src/vision/`：照片识别结果结构、本地快路径、云端校验和样本保存
-- `server/visionProxy.js`：OpenAI 视觉识别代理，不在 App 内保存 API Key
+- `src/vision/`：照片识别结果结构、本地模型识别接口和样本保存
+- `server/visionProxy.js`：可选 OpenAI 视觉识别代理，仅用于开发期对照校验，不是默认 App 链路
 - `scripts/verify-engine.js`：本地样例验证脚本
 - `scripts/verify-vision.js`：照片识别管线验证脚本
 - `package.json`：Expo 项目配置
@@ -77,13 +77,13 @@ npm run dataset:camerash
 
 脚本会把数据下载到本地 `datasets/camerash/` 并生成 `manifest.json`。`datasets/` 默认不提交到仓库。
 
-启动 OpenAI 视觉代理：
+可选启动 OpenAI 视觉代理，用于开发期对照校验：
 
 ```bash
 OPENAI_API_KEY=你的_key npm run vision:proxy
 ```
 
-App 通过 `EXPO_PUBLIC_VISION_API_URL` 连接代理，默认是：
+当前 App 默认全本地，不会自动连接代理。如果你要单独调试代理接口，默认地址是：
 
 ```txt
 http://localhost:8787/recognize-mahjong
@@ -93,14 +93,23 @@ http://localhost:8787/recognize-mahjong
 
 ## 拍照推荐链路
 
-第一版按“眼镜拍照，手机处理”的架构设计：
+第一版按“眼镜拍照，手机全本地处理”的架构设计：
 
 - `GlassesInput` 是通用输入抽象，现在先用手机相机模拟眼镜拍照，之后可以接具体眼镜 SDK。
-- 本地快路径会先尝试识别；置信度不足时提示重拍，不直接给误导性推荐。
-- OpenAI 视觉代理作为异步校验和兜底，返回 `handTiles`、`drawnTile`、`melds`、`deadTiles`、`overallConfidence` 等结构化字段。
+- 本地模型负责识别；置信度不足时提示重拍，不直接给误导性推荐。
+- `src/vision/localModelRecognizer.js` 定义本地模型运行时接口，要求模型输出牌张、位置、角色和置信度，再统一转成 `handTiles`、`drawnTile`、`melds`、`deadTiles`、`overallConfidence`。
 - 手机本地可保存可删除样本元数据，用于后续训练本地快识别模型。
 - `src/vision/camerashDataset.js` 提供 Camerash 数据集 42 类标签到项目牌码的映射，便于把公开数据集转成统一训练 manifest。
 - 当前识别范围优先覆盖自己的手牌、摸牌和明牌；整桌牌河识别放到下一阶段。
+
+### 全本地模型落地路线
+
+当前推荐 / 牌效分析已经完全在手机端 JavaScript 里运行。照片识别要做到真正稳定，需要训练并随 App 发布一个本地模型：
+
+- 数据准备：用 `npm run dataset:camerash` 拉取公开数据集，再合并 App 本地保存的亲友局样本。
+- 模型训练：优先训练轻量检测模型，输出 `tile`、`box`、`confidence`、`role`；移动端建议导出 TFLite 或 ONNX。
+- 手机运行：Expo Go 不能直接跑原生 TFLite/ONNX 推理，正式版需要 Expo prebuild / custom dev client / 原生 iOS Android 包。
+- 推荐闭环：模型输出统一识别结构后，直接调用本项目 `solveState`，不上传照片、不依赖 API key。
 
 ## 当前规则范围
 

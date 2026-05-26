@@ -5,6 +5,7 @@ const {
   runCloudVerification,
   runLocalRecommendation,
 } = require("../src/vision/recommendationPipeline");
+const { recognitionFromDetections } = require("../src/vision/localModelRecognizer");
 const { recognitionSchema, extractOutputText } = require("../server/visionProxy");
 const { mapCamerashClass } = require("../src/vision/camerashDataset");
 
@@ -41,19 +42,54 @@ async function main() {
   assert(low.status === "retake", "低置信本地识别提示重拍");
   assert(!low.result, "低置信识别不会输出误导性推荐");
 
-  const cloudConflict = await runCloudVerification(
+  const localModelRecognition = recognitionFromDetections(
+    HIGH_CONFIDENCE.handTiles.map((tile, index) => ({
+      tile,
+      confidence: 0.93,
+      role: "hand",
+      x: index * 28,
+      y: 0,
+    })).concat({
+      tile: HIGH_CONFIDENCE.drawnTile,
+      confidence: 0.93,
+      role: "drawn",
+      x: 420,
+      y: 0,
+    })
+  );
+  assert(localModelRecognition.overallConfidence > 0.9, "本地模型检测输出可转换为统一识别结构");
+
+  const modelRuntime = {
+    source: "test-local-model",
+    detect: async () =>
+      HIGH_CONFIDENCE.handTiles.map((tile, index) => ({
+        tile,
+        confidence: 0.93,
+        role: "hand",
+        x: index * 28,
+        y: 0,
+      })).concat({
+        tile: HIGH_CONFIDENCE.drawnTile,
+        confidence: 0.93,
+        role: "drawn",
+        x: 420,
+        y: 0,
+      }),
+  };
+  const modelLocal = await runLocalRecommendation({}, { localOnly: true, localModelRuntime: modelRuntime });
+  assert(modelLocal.status === "recommendation", "全本地模型识别结果可直接生成推荐");
+
+  const skippedCloud = await runCloudVerification(
     {},
-    {},
+    { localOnly: true },
     HIGH_CONFIDENCE,
     {
-      cloudRecognizer: async () => ({
-        ...HIGH_CONFIDENCE,
-        drawnTile: "4m",
-        source: "cloud-test",
-      }),
+      cloudRecognizer: async () => {
+        throw new Error("local-only should not call cloud recognizer");
+      },
     }
   );
-  assert(cloudConflict.status === "conflict", "本地与云端识别冲突时提示重拍确认");
+  assert(skippedCloud.status === "skipped", "全本地模式不会调用云端识别");
 
   const schema = recognitionSchema();
   assert(schema.properties.handTiles.items.enum.includes("1m"), "后端代理使用结构化麻将牌 JSON Schema");
