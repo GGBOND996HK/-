@@ -15,6 +15,7 @@ const { solveState } = require("./src/engine/mahjong");
 import { Field, ActionButton } from "./src/components/shared";
 import { ResultView } from "./src/components/ResultView";
 import GameView from "./src/components/GameView";
+import PhotoAdvisorView from "./src/components/PhotoAdvisorView";
 
 const PRESET = {
   handText: "123m 456p SSBBC",
@@ -24,7 +25,7 @@ const PRESET = {
 };
 
 export default function App() {
-  const [mode, setMode] = useState("snapshot"); // "snapshot" | "game"
+  const [mode, setMode] = useState("snapshot"); // "snapshot" | "photo" | "game"
   const [handText, setHandText] = useState(PRESET.handText);
   const [meldText, setMeldText] = useState(PRESET.meldText);
   const [deadText, setDeadText] = useState(PRESET.deadText);
@@ -74,6 +75,15 @@ export default function App() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          style={[styles.tab, mode === "photo" ? styles.tabActive : null]}
+          onPress={() => setMode("photo")}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabText, mode === "photo" ? styles.tabTextActive : null]}>
+            拍照推荐
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.tab, mode === "game" ? styles.tabActive : null]}
           onPress={() => setMode("game")}
           activeOpacity={0.8}
@@ -87,6 +97,10 @@ export default function App() {
       {mode === "game" ? (
         <ScrollView contentContainerStyle={styles.container}>
           <GameView onExit={() => setMode("snapshot")} />
+        </ScrollView>
+      ) : mode === "photo" ? (
+        <ScrollView contentContainerStyle={styles.container}>
+          <PhotoAdvisorView />
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.container}>

@@ -9,11 +9,19 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "verify:engine": "node scripts/verify-engine.js",
-    "verify:session": "node scripts/verify-session.js"
+    "verify:session": "node scripts/verify-session.js",
+    "verify:vision": "node scripts/verify-vision.js",
+    "verify:all": "npm run verify:engine && npm run verify:session && npm run verify:vision",
+    "dataset:camerash": "node scripts/prepare-camerash-dataset.js",
+    "vision:proxy": "node server/visionProxy.js"
   },
   "dependencies": {
     "expo": "~54.0.0",
+    "expo-camera": "~17.0.10",
+    "expo-file-system": "~19.0.22",
+    "expo-image-manipulator": "~14.0.8",
     "expo-status-bar": "~3.0.0",
+    "mahjong-tile-efficiency": "^1.0.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.4",

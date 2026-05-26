@@ -26,3 +26,7 @@ Thumbs.db
 
 # Temporary research clones
 .codex_research/
+
+# Local training data and generated model artifacts
+datasets/
+models/

@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 export function Field({ label, multiline = false, ...props }) {
   return (
@@ -16,27 +16,48 @@ export function Field({ label, multiline = false, ...props }) {
 }
 
 export function ActionButton({ title, onPress, primary = false, disabled = false }) {
+  const buttonStyle = [
+    styles.button,
+    primary ? styles.buttonPrimary : styles.buttonSecondary,
+    disabled ? styles.buttonDisabled : null,
+  ];
+  const textStyle = [
+    styles.buttonText,
+    primary ? styles.buttonTextPrimary : styles.buttonTextSecondary,
+    disabled ? styles.buttonTextDisabled : null,
+  ];
+
+  if (Platform.OS === "web") {
+    return React.createElement(
+      "button",
+      {
+        type: "button",
+        disabled,
+        onClick: disabled ? undefined : onPress,
+        style: {
+          ...StyleSheet.flatten(buttonStyle),
+          borderWidth: 0,
+          cursor: disabled ? "default" : "pointer",
+          display: "flex",
+          fontFamily: "inherit",
+          minHeight: 48,
+          paddingBottom: 14,
+          paddingTop: 14,
+        },
+      },
+      React.createElement("span", { style: StyleSheet.flatten(textStyle) }, title)
+    );
+  }
+
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={[
-        styles.button,
-        primary ? styles.buttonPrimary : styles.buttonSecondary,
-        disabled ? styles.buttonDisabled : null,
-      ]}
-      activeOpacity={0.88}
+      accessibilityRole="button"
+      style={({ pressed }) => [...buttonStyle, pressed && !disabled ? styles.buttonPressed : null]}
     >
-      <Text
-        style={[
-          styles.buttonText,
-          primary ? styles.buttonTextPrimary : styles.buttonTextSecondary,
-          disabled ? styles.buttonTextDisabled : null,
-        ]}
-      >
-        {title}
-      </Text>
-    </TouchableOpacity>
+      <Text style={textStyle}>{title}</Text>
+    </Pressable>
   );
 }
 
@@ -79,6 +100,9 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.45,
+  },
+  buttonPressed: {
+    opacity: 0.82,
   },
   buttonText: {
     fontSize: 15,

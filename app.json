@@ -10,10 +10,16 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.local.shanghaiqiaoma"
+      "bundleIdentifier": "com.local.shanghaiqiaoma",
+      "infoPlist": {
+        "NSCameraUsageDescription": "用于拍摄自己的麻将手牌并生成出牌推荐。"
+      }
     },
     "android": {
-      "package": "com.local.shanghaiqiaoma"
+      "package": "com.local.shanghaiqiaoma",
+      "permissions": [
+        "CAMERA"
+      ]
     }
   }
 }

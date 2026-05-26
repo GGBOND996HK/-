@@ -5,15 +5,19 @@
 ## 目标功能
 
 - 输入现场牌型
+- 手机拍照识别自己的手牌 / 摸牌 / 明牌
 - AI 分析下一张该打什么
-- 优先输出最容易把胜率推高的出牌
+- 按攻守平衡输出综合收益最高的出牌
 - 展示打出后可听哪些牌、还剩几张、有效进张多少
 
 ## 当前项目结构
 
 - `App.js`：手机应用主界面
 - `src/engine/mahjong.js`：麻将分析引擎
+- `src/vision/`：照片识别结果结构、本地快路径、云端校验和样本保存
+- `server/visionProxy.js`：OpenAI 视觉识别代理，不在 App 内保存 API Key
 - `scripts/verify-engine.js`：本地样例验证脚本
+- `scripts/verify-vision.js`：照片识别管线验证脚本
 - `package.json`：Expo 项目配置
 - `app.json`：移动端应用配置
 
@@ -59,6 +63,45 @@ npm run start
 npm run verify:engine
 ```
 
+完整验证：
+
+```bash
+npm run verify:all
+```
+
+准备 Camerash 麻将牌数据集映射，用于后续训练本地快识别模型：
+
+```bash
+npm run dataset:camerash
+```
+
+脚本会把数据下载到本地 `datasets/camerash/` 并生成 `manifest.json`。`datasets/` 默认不提交到仓库。
+
+启动 OpenAI 视觉代理：
+
+```bash
+OPENAI_API_KEY=你的_key npm run vision:proxy
+```
+
+App 通过 `EXPO_PUBLIC_VISION_API_URL` 连接代理，默认是：
+
+```txt
+http://localhost:8787/recognize-mahjong
+```
+
+代理只接收裁剪压缩后的 base64 牌区图片并返回结构化牌面；原图不落盘，手机端也不会包含 `OPENAI_API_KEY`。
+
+## 拍照推荐链路
+
+第一版按“眼镜拍照，手机处理”的架构设计：
+
+- `GlassesInput` 是通用输入抽象，现在先用手机相机模拟眼镜拍照，之后可以接具体眼镜 SDK。
+- 本地快路径会先尝试识别；置信度不足时提示重拍，不直接给误导性推荐。
+- OpenAI 视觉代理作为异步校验和兜底，返回 `handTiles`、`drawnTile`、`melds`、`deadTiles`、`overallConfidence` 等结构化字段。
+- 手机本地可保存可删除样本元数据，用于后续训练本地快识别模型。
+- `src/vision/camerashDataset.js` 提供 Camerash 数据集 42 类标签到项目牌码的映射，便于把公开数据集转成统一训练 manifest。
+- 当前识别范围优先覆盖自己的手牌、摸牌和明牌；整桌牌河识别放到下一阶段。
+
 ## 当前规则范围
 
 基础版按常见上海敲麻口径，只把以下目标牌型纳入求解：
@@ -76,7 +119,14 @@ npm run verify:engine
 - 打出后可听哪些牌
 - 有效进张还有多少
 - 二层改良预案：打出后摸到有效牌，再看下一手应该怎么接
-- 综合评分：结合向听、听牌张数、有效进张、二层改良和上海敲麻牌型价值
+- 综合评分：结合向听、听牌张数、有效进张、二层改良、牌型价值和可见死牌安全热度
+
+当前引擎会把明牌内容纳入牌型判断：例如开出 `EEE` 后不会再把目标判成清一色 / 清碰，开出 `123m` 后也不会判成字一色。非法明牌组如 `12m3p` 会直接报错。
+
+## 已接入的外部轮子
+
+- `mahjong-tile-efficiency`：MIT 许可的 JavaScript 牌效库。当前作为 HK 规则下的基础向听 / 进张参考，展示在推荐结果里；最终排序仍由本项目的上海敲麻规则、明牌、死牌和攻守评分决定。
+- `Camerash/mahjong-dataset`：MIT 许可的数据集。项目提供 `npm run dataset:camerash` 生成本地训练 manifest，不把原始图片或模型产物提交进仓库。
 
 ## 后续可扩展
 

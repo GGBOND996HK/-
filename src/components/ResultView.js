@@ -34,17 +34,29 @@ export function ResultView({ result }) {
           <MetricItem label="花牌" value={String(result.flowerCount)} />
         </View>
         <Text style={styles.summaryText}>
-          {result.baseAnalysis.shanten === 0
-            ? "当前已经成型到可胡牌面。"
+          {result.readiness && result.readiness.summary
+            ? result.readiness.summary
             : `当前离最近可胡目标还差 ${result.baseAnalysis.shanten} 向。`}
         </Text>
+        {result.safetyContext && result.safetyContext.note ? (
+          <Text style={styles.summaryMuted}>{result.safetyContext.note}</Text>
+        ) : null}
+        {result.tileEfficiency && result.tileEfficiency.enabled ? (
+          <Text style={styles.summaryMuted}>
+            外部牌效参考：{result.tileEfficiency.rule} 规则 {result.tileEfficiency.shanten} 向
+            {result.tileEfficiency.ukeire && result.tileEfficiency.ukeire.totalUkeire
+              ? `，进张 ${result.tileEfficiency.ukeire.totalUkeire}`
+              : ""}
+            。最终排序仍按上海敲麻收益。
+          </Text>
+        ) : null}
       </View>
 
       {result.recommendations.length > 0 ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>出牌推荐</Text>
           <Text style={styles.heroRecommendation}>
-            首选打 {formatTileLabel(topChoice.discard)}，它在当前规则下最容易把胜率推高。
+            攻守平衡首选打 {formatTileLabel(topChoice.discard)}，它在当前规则下的综合收益最高。
           </Text>
           {result.recommendations.slice(0, 6).map((item, index) => (
             <View
@@ -70,6 +82,14 @@ export function ResultView({ result }) {
               <Text style={styles.recommendationBody}>
                 综合评分 {item.totalScore}，二层改良 {item.lookaheadScore}，牌型价值 {item.patternValue}。
               </Text>
+              {item.tileEfficiency ? (
+                <Text style={styles.recommendationMuted}>
+                  {item.tileEfficiency.label}，参考进张 {item.tileEfficiency.totalUkeire}。
+                </Text>
+              ) : null}
+              {item.safetyNote ? (
+                <Text style={styles.recommendationMuted}>{item.safetyNote}</Text>
+              ) : null}
               <Text style={styles.recommendationMuted}>
                 {item.waits.length > 0
                   ? `可听：${item.waits.map(formatWaitLabel).join("、")}`
@@ -165,6 +185,12 @@ const styles = StyleSheet.create({
     color: "#473f36",
     fontSize: 15,
     lineHeight: 24,
+  },
+  summaryMuted: {
+    color: "#786d62",
+    fontSize: 13,
+    lineHeight: 21,
+    marginTop: 6,
   },
   heroRecommendation: {
     color: "#8a4f08",

@@ -51,6 +51,11 @@ const CHINESE_MAP = new Map([
   ["白", "B"],
 ]);
 
+const {
+  calculateTileEfficiencyReference,
+  describeDiscardEfficiency,
+} = require("./tileEfficiency");
+
 function solveState({ handText, meldText, deadText, flowerCount }) {
   const handCounts = parseTiles(handText);
   const meldGroups = parseMelds(meldText);
@@ -84,30 +89,40 @@ function solveState({ handText, meldText, deadText, flowerCount }) {
   for (const tile of FLOWER_HONOR_TILES) {
     availability[tileToIndex(tile)] = 0;
   }
-  const baseAnalysis = analyzeHand(handCounts, openMeldCount);
+  const baseAnalysis = analyzeHand(handCounts, meldGroups);
+  const mode = concealedCount % 3 === 2 ? "discard14" : "wait13";
+  const safetyContext = createSafetyContext(deadCounts);
+  const tileEfficiency = calculateTileEfficiencyReference({
+    handCounts,
+    rule: "HK",
+  });
 
   return {
     concealedCount,
     openMeldCount,
     flowerCount: Number(flowerCount || 0) + extractedFlowerCount,
     baseAnalysis,
+    readiness: describeReadiness(baseAnalysis, mode),
+    safetyContext,
     advisor: {
       source: "本地上海敲麻引擎",
-      mode: concealedCount % 3 === 2 ? "discard14" : "wait13",
+      mode,
     },
+    tileEfficiency,
     recommendations:
-      concealedCount % 3 === 2
-        ? rankDiscards(handCounts, openMeldCount, availability, deadCounts)
+      mode === "discard14"
+        ? rankDiscards(handCounts, meldGroups, availability, deadCounts, safetyContext, tileEfficiency)
         : [],
     bestDraws:
-      concealedCount % 3 === 2 ? [] : listImprovingDraws(handCounts, openMeldCount, availability),
+      mode === "discard14" ? [] : listImprovingDraws(handCounts, meldGroups, availability),
   };
 }
 
-function analyzeHand(handCounts, openMeldCount) {
+function analyzeHand(handCounts, meldGroupsOrCount = 0) {
+  const meldContext = createMeldContext(meldGroupsOrCount);
   let best = { shanten: Number.POSITIVE_INFINITY, patterns: [], winning: [] };
   for (const pattern of PATTERNS) {
-    const stats = evaluatePattern(handCounts, openMeldCount, pattern);
+    const stats = evaluatePattern(handCounts, meldContext, pattern);
     if (stats.shanten < best.shanten) {
       best = {
         shanten: stats.shanten,
@@ -127,11 +142,19 @@ function analyzeHand(handCounts, openMeldCount) {
   return best;
 }
 
-function rankDiscards(handCounts, openMeldCount, availability, deadCounts) {
-  const analyze = createCachedAnalyzer(openMeldCount);
+function rankDiscards(
+  handCounts,
+  meldGroupsOrCount,
+  availability,
+  deadCounts,
+  safetyContext,
+  tileEfficiency
+) {
+  const analyze = createCachedAnalyzer(meldGroupsOrCount);
   const currentTiles = expandCounts(handCounts);
   const uniqueTiles = [...new Set(currentTiles)];
   const recommendations = [];
+  const context = safetyContext || createSafetyContext(deadCounts);
 
   for (const tileIndex of uniqueTiles) {
     const nextHand = cloneCounts(handCounts);
@@ -206,9 +229,8 @@ function rankDiscards(handCounts, openMeldCount, availability, deadCounts) {
       patternValue * 25 +
       lookaheadScore * 0.18 +
       immediateScore * 0.12;
-    const balancedScore = attackScore + safetyScore * 9;
-    const totalScore =
-      attackScore;
+    const balancedScore = attackScore + safetyScore * context.defensiveWeight;
+    const totalScore = balancedScore;
 
     recommendations.push({
       discard: TILE_ORDER[tileIndex],
@@ -224,7 +246,9 @@ function rankDiscards(handCounts, openMeldCount, availability, deadCounts) {
       balancedScore: Math.round(balancedScore),
       lookaheadScore: Math.round(lookaheadScore),
       totalScore: Math.round(totalScore),
+      tileEfficiency: describeDiscardEfficiency(tileEfficiency, TILE_ORDER[tileIndex]),
       score: [totalScore, waitCount > 0 ? 1 : 0, -state.shanten, waitCount, effectiveCount],
+      safetyNote: context.note,
     });
   }
 
@@ -233,8 +257,8 @@ function rankDiscards(handCounts, openMeldCount, availability, deadCounts) {
   return recommendations;
 }
 
-function listImprovingDraws(handCounts, openMeldCount, availability) {
-  const current = analyzeHand(handCounts, openMeldCount);
+function listImprovingDraws(handCounts, meldGroupsOrCount, availability) {
+  const current = analyzeHand(handCounts, meldGroupsOrCount);
   const options = [];
 
   for (let tileIndex = 0; tileIndex < TILE_ORDER.length; tileIndex += 1) {
@@ -244,7 +268,7 @@ function listImprovingDraws(handCounts, openMeldCount, availability) {
 
     const nextHand = cloneCounts(handCounts);
     nextHand[tileIndex] += 1;
-    const nextState = analyzeHand(nextHand, openMeldCount);
+    const nextState = analyzeHand(nextHand, meldGroupsOrCount);
     if (nextState.shanten < current.shanten || nextState.shanten === 0) {
       options.push({
         tile: TILE_ORDER[tileIndex],
@@ -264,13 +288,13 @@ function listImprovingDraws(handCounts, openMeldCount, availability) {
   return options;
 }
 
-function evaluatePattern(handCounts, openMeldCount, pattern) {
-  const filtered = filterCountsForPattern(handCounts, pattern);
+function evaluatePattern(handCounts, meldContext, pattern) {
+  const filtered = filterCountsForPattern(handCounts, pattern, meldContext);
   if (!filtered.allowed) {
     return { shanten: Number.POSITIVE_INFINITY };
   }
 
-  const meldsNeeded = 4 - openMeldCount;
+  const meldsNeeded = 4 - meldContext.count;
   if (meldsNeeded < 0) {
     return { shanten: Number.POSITIVE_INFINITY };
   }
@@ -285,12 +309,12 @@ function evaluatePattern(handCounts, openMeldCount, pattern) {
   return { shanten: Math.max(0, missingTiles - 1) };
 }
 
-function createCachedAnalyzer(openMeldCount) {
+function createCachedAnalyzer(meldGroupsOrCount) {
   const cache = new Map();
   return (counts) => {
     const key = counts.join(",");
     if (!cache.has(key)) {
-      cache.set(key, analyzeHand(counts, openMeldCount));
+      cache.set(key, analyzeHand(counts, meldGroupsOrCount));
     }
     return cache.get(key);
   };
@@ -348,27 +372,30 @@ function annotatePolicyPicks(recommendations) {
   if (recommendations.length === 0) {
     return;
   }
-  const attack = recommendations[0];
-  attack.policy = { ...(attack.policy || {}), attack: true };
-
-  const attackShanten = attack.state.shanten;
-  const stable = recommendations
-    .filter((item) => item.state.shanten <= attackShanten + 1)
+  const attack = recommendations
     .slice()
     .sort((left, right) => {
-      if (left.safetyScore !== right.safetyScore) {
-        return right.safetyScore - left.safetyScore;
+      if (left.attackScore !== right.attackScore) {
+        return right.attackScore - left.attackScore;
       }
-      return right.balancedScore - left.balancedScore;
+      return right.effectiveCount - left.effectiveCount;
     })[0];
+  attack.policy = { ...(attack.policy || {}), attack: true };
+
+  const stable = recommendations[0];
 
   if (stable) {
     stable.policy = { ...(stable.policy || {}), stable: true };
   }
 }
 
-function filterCountsForPattern(handCounts, pattern) {
+function filterCountsForPattern(handCounts, pattern, meldContext) {
   const counts = cloneCounts(handCounts);
+  const combinedCounts = addCounts(counts, meldContext.counts);
+
+  if (!pattern.allowSequence && meldContext.types.some((type) => type === "sequence")) {
+    return { allowed: false, counts };
+  }
 
   if (pattern.type === "global") {
     return { allowed: true, counts };
@@ -376,14 +403,14 @@ function filterCountsForPattern(handCounts, pattern) {
 
   if (pattern.type === "allHonors") {
     for (let index = 0; index < 27; index += 1) {
-      if (counts[index] > 0) {
+      if (combinedCounts[index] > 0) {
         return { allowed: false, counts };
       }
     }
     return { allowed: true, counts };
   }
 
-  const suitCandidates = [0, 1, 2].filter((suit) => suitUsage(counts, suit) > 0);
+  const suitCandidates = [0, 1, 2].filter((suit) => suitUsage(combinedCounts, suit) > 0);
   if (suitCandidates.length > 1) {
     return { allowed: false, counts };
   }
@@ -391,20 +418,105 @@ function filterCountsForPattern(handCounts, pattern) {
   const chosenSuit = suitCandidates[0] ?? 0;
   for (let index = 0; index < 27; index += 1) {
     const suit = Math.floor(index / 9);
-    if (suit !== chosenSuit && counts[index] > 0) {
+    if (suit !== chosenSuit && combinedCounts[index] > 0) {
       return { allowed: false, counts };
     }
   }
 
   if (pattern.type === "fullFlush") {
     for (let index = 27; index < TILE_ORDER.length; index += 1) {
-      if (counts[index] > 0) {
+      if (combinedCounts[index] > 0) {
         return { allowed: false, counts };
       }
     }
   }
 
   return { allowed: true, counts };
+}
+
+function createMeldContext(meldGroupsOrCount) {
+  if (Array.isArray(meldGroupsOrCount)) {
+    const groups = meldGroupsOrCount.map((group) => cloneCounts(group));
+    return {
+      groups,
+      count: groups.length,
+      counts: countMeldTiles(groups),
+      types: groups.map((group) => classifyMeld(group)),
+    };
+  }
+
+  return {
+    groups: [],
+    count: Number(meldGroupsOrCount || 0),
+    counts: new Array(TILE_ORDER.length).fill(0),
+    types: [],
+  };
+}
+
+function classifyMeld(counts) {
+  const tiles = expandCounts(counts);
+  const uniqueTiles = [...new Set(tiles)];
+
+  if (tiles.some(isFlowerHonorIndex)) {
+    throw new Error("中、发、白按当前口径算花，不能作为明牌组。");
+  }
+
+  if ((tiles.length === 3 || tiles.length === 4) && uniqueTiles.length === 1) {
+    return tiles.length === 4 ? "kong" : "pung";
+  }
+
+  if (tiles.length === 3 && isSequenceTiles(tiles)) {
+    return "sequence";
+  }
+
+  throw new Error(`明牌组 ${tiles.map((index) => TILE_ORDER[index]).join("")} 不是合法顺子、刻子或杠。`);
+}
+
+function isSequenceTiles(tiles) {
+  const sorted = tiles.slice().sort((left, right) => left - right);
+  if (sorted.some((index) => index >= 27)) {
+    return false;
+  }
+  if (new Set(sorted).size !== 3) {
+    return false;
+  }
+  return (
+    Math.floor(sorted[0] / 9) === Math.floor(sorted[1] / 9) &&
+    Math.floor(sorted[1] / 9) === Math.floor(sorted[2] / 9) &&
+    sorted[1] === sorted[0] + 1 &&
+    sorted[2] === sorted[1] + 1
+  );
+}
+
+function createSafetyContext(deadCounts) {
+  const knownDeadCount = sumCounts(deadCounts || []);
+  const hasMeaningfulRiver = knownDeadCount > 0;
+  return {
+    knownDeadCount,
+    defensiveWeight: hasMeaningfulRiver ? 9 : 3,
+    note: hasMeaningfulRiver ? "" : "防守信息不足，稳健评分已降低安全权重。",
+  };
+}
+
+function describeReadiness(baseAnalysis, mode) {
+  if (!baseAnalysis || baseAnalysis.shanten > 0) {
+    return {
+      key: "building",
+      summary: `当前离最近可胡目标还差 ${baseAnalysis ? baseAnalysis.shanten : "-"} 向。`,
+    };
+  }
+
+  if (mode === "wait13") {
+    return {
+      key: "tenpai",
+      summary: "当前是听牌状态，等有效进张胡牌。",
+    };
+  }
+
+  return {
+    key: "ready-or-complete",
+    summary: "当前摸牌后已到可胡或可保持听牌的牌面。",
+  };
 }
 
 function suitUsage(counts, suit) {
@@ -557,6 +669,7 @@ function parseMelds(text) {
     if (tiles.length < 3 || tiles.length > 4) {
       throw new Error(`明牌组 ${token} 必须是 3 张或 4 张。`);
     }
+    classifyMeld(counts);
     return counts;
   });
 }
@@ -618,6 +731,10 @@ function expandCounts(counts) {
 
 function cloneCounts(counts) {
   return counts.slice();
+}
+
+function addCounts(left, right) {
+  return left.map((value, index) => value + (right[index] || 0));
 }
 
 function sumCounts(counts) {
